@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Phishing URL Detector</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+    :root {
+        --bg: #0B1220;
+        --surface: #131B2E;
+        --surface-raised: #182238;
+        --border: #26314A;
+        --text: #E7ECF5;
+        --muted: #8B96AD;
+        --low: #3ECF8E;
+        --medium: #F0A93A;
+        --high: #EF5A5A;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+        background: var(--bg);
+        color: var(--text);
+        font-family: 'IBM Plex Sans', sans-serif;
+        max-width: 760px;
+        margin: 0 auto;
+        padding: 56px 24px 80px;
+        line-height: 1.5;
+    }
+
+    .status {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+        text-transform: uppercase;
+        margin-bottom: 10px;
+    }
+
+    .status-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--low);
+        box-shadow: 0 0 8px var(--low);
+    }
+
+    h1 {
+        font-size: 26px;
+        font-weight: 600;
+        margin: 0 0 6px;
+        letter-spacing: -0.01em;
+    }
+
+    .subtitle {
+        color: var(--muted);
+        font-size: 15px;
+        margin: 0 0 32px;
+    }
+
+    form {
+        display: flex;
+        align-items: stretch;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        overflow: hidden;
+        transition: border-color 0.15s ease;
+    }
+
+    form:focus-within {
+        border-color: #3E5A8A;
+    }
+
+    .prompt {
+        display: flex;
+        align-items: center;
+        padding: 0 0 0 16px;
+        font-family: 'IBM Plex Mono', monospace;
+        color: var(--muted);
+        font-size: 15px;
+    }
+
+    input[type="text"] {
+        flex: 1;
+        background: transparent;
+        border: none;
+        outline: none;
+        color: var(--text);
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 15px;
+        padding: 14px 12px;
+    }
+
+    input[type="text"]::placeholder {
+        color: #4C5875;
+    }
+
+    button {
+        background: #1E2A45;
+        color: var(--text);
+        border: none;
+        border-left: 1px solid var(--border);
+        padding: 0 24px;
+        font-family: 'IBM Plex Sans', sans-serif;
+        font-weight: 500;
+        font-size: 14px;
+        cursor: pointer;
+        transition: background 0.15s ease;
+    }
+
+    button:hover {
+        background: #29385A;
+    }
+
+    /* Result card */
+    .result {
+        margin-top: 28px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-left-width: 4px;
+        border-radius: 8px;
+        padding: 24px;
+    }
+
+    .result.risk-low { border-left-color: var(--low); }
+    .result.risk-medium { border-left-color: var(--medium); }
+    .result.risk-high { border-left-color: var(--high); }
+
+    .result-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 6px;
+    }
+
+    .badge {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        padding: 4px 10px;
+        border-radius: 4px;
+    }
+
+    .badge.risk-low { color: var(--low); background: rgba(62, 207, 142, 0.12); }
+    .badge.risk-medium { color: var(--medium); background: rgba(240, 169, 58, 0.12); }
+    .badge.risk-high { color: var(--high); background: rgba(239, 90, 90, 0.12); }
+
+    .score-label {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 13px;
+        color: var(--muted);
+    }
+
+    .checked-url {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 13.5px;
+        color: var(--text);
+        word-break: break-all;
+        background: var(--surface-raised);
+        border: 1px solid var(--border);
+        border-radius: 5px;
+        padding: 8px 10px;
+        margin: 14px 0 18px;
+    }
+
+    /* Risk meter */
+    .meter-track {
+        height: 6px;
+        background: var(--surface-raised);
+        border-radius: 3px;
+        overflow: hidden;
+        margin-bottom: 20px;
+    }
+
+    .meter-fill {
+        height: 100%;
+        border-radius: 3px;
+    }
+
+    .meter-fill.risk-low { background: var(--low); }
+    .meter-fill.risk-medium { background: var(--medium); }
+    .meter-fill.risk-high { background: var(--high); }
+
+    .indicators-label {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 11px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin-bottom: 10px;
+    }
+
+    ul.indicators {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    ul.indicators li {
+        font-size: 14px;
+        padding-left: 18px;
+        position: relative;
+        color: var(--text);
+    }
+
+    ul.indicators li::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 6px;
+        width: 6px;
+        height: 6px;
+        border-radius: 1px;
+        background: var(--muted);
+    }
+
+    .no-flags {
+        color: var(--muted);
+        font-size: 14px;
+        font-style: normal;
+    }
+
+    /* History */
+    .history-section {
+        margin-top: 48px;
+    }
+
+    .history-label {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 11px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin-bottom: 14px;
+    }
+
+    .log-row {
+        display: grid;
+        grid-template-columns: 1fr auto auto;
+        gap: 14px;
+        align-items: center;
+        padding: 12px 4px;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .log-row:first-child {
+        border-top: 1px solid var(--border);
+    }
+
+    .log-url {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 13px;
+        color: var(--text);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .log-meta {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 11px;
+        color: var(--muted);
+        text-align: right;
+        white-space: nowrap;
+    }
+
+    .empty-state {
+        color: var(--muted);
+        font-size: 14px;
+        padding: 20px 4px;
+    }
+</style>
+</head>
+<body>
+
+    <div class="status">
+        <span class="status-dot"></span>
+        <span>Analyzer ready</span>
+    </div>
+
+    <h1>Phishing URL Detector</h1>
+    <p class="subtitle">Paste a URL to run it through automated red-flag checks — HTTPS, domain age, typosquatting, and more.</p>
+
+    <form method="POST">
+        <span class="prompt">&gt;</span>
+        <input type="text" name="url" placeholder="https://example.com" required autofocus>
+        <button type="submit">Check URL</button>
+    </form>
+
+    {% if result %}
+        {% set risk_class = 'risk-' ~ result.risk|lower %}
+        <div class="result {{ risk_class }}">
+            <div class="result-header">
+                <span class="badge {{ risk_class }}">{{ result.risk }} risk</span>
+                <span class="score-label">score {{ result.score }}</span>
+            </div>
+
+            <div class="checked-url">{{ result.url }}</div>
+
+           <div class="meter-fill {{ risk_class }}" style="width: {{ result.meter_percent }}% ;"></div>
+    
+            <div class="indicators-label">Indicators</div>
+            {% if result.flags %}
+                <ul class="indicators">
+                    {% for flag in result.flags %}
+                        <li>{{ flag }}</li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <p class="no-flags">No red flags detected on this URL.</p>
+            {% endif %}
+        </div>
+    {% endif %}
+
+    <div class="history-section">
+        <div class="history-label">Scan log</div>
+        {% if history %}
+            {% for row in history %}
+                <div class="log-row">
+                    <span class="log-url" title="{{ row[0] }}">{{ row[0] }}</span>
+                    <span class="badge risk-{{ row[1].lower() }}">{{ row[1] }}</span>
+                    <span class="log-meta">{{ row[3] }}</span>
+                </div>
+            {% endfor %}
+        {% else %}
+            <div class="empty-state">No scans yet — check a URL above to start your log.</div>
+        {% endif %}
+    </div>
+
+</body>
+</html>
