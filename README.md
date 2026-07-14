@@ -143,7 +143,7 @@ Each detected indicator contributes to an overall risk score.
 ## 📊 Risk Scoring
 
 | Score | Risk |
-|-------:|------|
+|-------: | ------ |
 | 0 – 3 | 🟢 Low |
 | 4 – 7 | 🟡 Medium |
 | 8+ | 🔴 High |
@@ -215,17 +215,16 @@ Version 4
 
 ## 👨‍💻 Author
 
-**Swaroop Morajkar**
+### Swaroop Morajkar
 
 Computer Engineering Graduate  
 M.Sc. Cybersecurity Student  
 Aspiring SOC Analyst & Security Engineer
 
-GitHub:
-https://github.com/swaroop-pixel
+GitHub: [swaroop-pixel](https://github.com/swaroop-pixel)
 
 LinkedIn:
-[text](https://www.linkedin.com/in/swaroop-morajkar-83071a260/)
+[Swaroop Morajkar](https://www.linkedin.com/in/swaroop-morajkar-83071a260/)
 
 ---
 
