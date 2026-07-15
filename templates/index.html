@@ -5,339 +5,475 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Phishing URL Detector</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
-    :root {
-        --bg: #0B1220;
-        --surface: #131B2E;
-        --surface-raised: #182238;
-        --border: #26314A;
-        --text: #E7ECF5;
-        --muted: #8B96AD;
-        --low: #3ECF8E;
-        --medium: #F0A93A;
-        --high: #EF5A5A;
-    }
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0B1220;--surface:#131B2E;--surface-2:#182238;--surface-3:#1D2A42;
+  --border:#26314A;--border-2:#1E2A40;--text:#E7ECF5;--muted:#8B96AD;--dim:#4A5568;
+  --low:#3ECF8E;--low-bg:rgba(62,207,142,.08);--low-border:rgba(62,207,142,.20);
+  --medium:#F0A93A;--medium-bg:rgba(240,169,58,.08);--medium-border:rgba(240,169,58,.20);
+  --high:#EF5A5A;--high-bg:rgba(239,90,90,.08);--high-border:rgba(239,90,90,.20);
+  --blue:#4A90D9;--blue-bg:rgba(74,144,217,.10);--radius:10px;
+}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.mono{font-family:'IBM Plex Mono',monospace}
+::-webkit-scrollbar{width:5px;height:5px}::-webkit-scrollbar-track{background:var(--bg)}::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
 
-    * { box-sizing: border-box; }
+/* Layout */
+.wrap{max-width:1440px;margin:0 auto;padding:0 32px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px}
 
-    body {
-        background: var(--bg);
-        color: var(--text);
-        font-family: 'IBM Plex Sans', sans-serif;
-        max-width: 760px;
-        margin: 0 auto;
-        padding: 56px 24px 80px;
-        line-height: 1.5;
-    }
+/* Header */
+.site-header{background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:50}
+.site-header .wrap{height:56px;display:flex;align-items:center;justify-content:space-between}
+.header-brand{display:flex;align-items:center;gap:12px}
+.header-logo{width:32px;height:32px;border-radius:7px;background:var(--blue-bg);border:1px solid rgba(74,144,217,.25);display:flex;align-items:center;justify-content:center}
+.header-title{font-size:14px;font-weight:600;letter-spacing:-.01em;line-height:1.2}
+.header-sub{font-size:11px;color:var(--muted);line-height:1.2}
+.version-badge{font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:500;color:var(--blue);background:var(--blue-bg);border:1px solid rgba(74,144,217,.20);border-radius:4px;padding:2px 8px}
+.header-meta{display:flex;align-items:center;gap:20px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted)}
+.status-dot{width:6px;height:6px;border-radius:50%;background:var(--low);box-shadow:0 0 6px var(--low);display:inline-block}
+.vr{width:1px;height:16px;background:var(--border)}
 
-    .status {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        font-family: 'IBM Plex Mono', monospace;
-        font-size: 12px;
-        letter-spacing: 0.08em;
-        color: var(--muted);
-        text-transform: uppercase;
-        margin-bottom: 10px;
-    }
+/* Main */
+main{padding:28px 0 60px}
+.section-label{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:14px}
+.section-label-row{display:flex;align-items:center;gap:8px;margin-bottom:14px}
+.section-label-row .section-label{margin-bottom:0}
+.section-label-row hr{flex:1;border:none;border-top:1px solid var(--border-2)}
+.section-label-row span{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--dim)}
 
-    .status-dot {
-        width: 7px;
-        height: 7px;
-        border-radius: 50%;
-        background: var(--low);
-        box-shadow: 0 0 8px var(--low);
-    }
+/* Search */
+.search-card{margin-bottom:20px}
+.search-row{display:flex;gap:8px;align-items:stretch}
+.url-input-wrap{flex:1;display:flex;align-items:center;gap:8px;background:var(--bg);border:1px solid var(--border);border-radius:7px;padding:0 12px;transition:border-color .15s}
+.url-input-wrap:focus-within{border-color:#3E5A8A}
+.url-prompt{font-family:'IBM Plex Mono',monospace;color:var(--dim);font-size:15px;user-select:none;flex-shrink:0}
+.url-input{flex:1;background:transparent;border:none;outline:none;font-family:'IBM Plex Mono',monospace;font-size:13.5px;color:var(--text);padding:12px 0}
+.url-input::placeholder{color:#3A4A62}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:0 16px;border-radius:7px;font-family:'IBM Plex Sans',sans-serif;font-size:13px;font-weight:500;cursor:pointer;white-space:nowrap;transition:all .15s;min-height:42px}
+.btn-ghost{background:var(--surface-2);border:1px solid var(--border);color:var(--muted)}
+.btn-ghost:hover{border-color:#3E5A8A;color:var(--text)}
+.btn-primary{background:#1E3A5F;border:1px solid #3E5A8A;color:#7FB3E8;font-weight:600}
+.btn-primary:hover{background:#243F66}
+.search-hint{margin-top:10px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--dim)}
 
-    h1 {
-        font-size: 26px;
-        font-weight: 600;
-        margin: 0 0 6px;
-        letter-spacing: -0.01em;
-    }
+/* URL bar */
+.url-bar{background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:8px 14px;display:flex;align-items:center;gap:10px;margin-bottom:16px;font-family:'IBM Plex Mono',monospace}
+.url-bar-label{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);flex-shrink:0}
+.url-bar-divider{width:1px;height:12px;background:var(--border);flex-shrink:0}
+.url-bar-url{font-size:12px;color:var(--muted);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.url-bar-time{font-size:10px;color:var(--dim);flex-shrink:0}
 
-    .subtitle {
-        color: var(--muted);
-        font-size: 15px;
-        margin: 0 0 32px;
-    }
+/* Results grid */
+.results-grid{display:grid;grid-template-columns:260px 1fr 1fr;gap:16px;margin-bottom:16px}
 
-    form {
-        display: flex;
-        align-items: stretch;
-        background: var(--surface);
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        overflow: hidden;
-        transition: border-color 0.15s ease;
-    }
+/* Score card */
+.score-card{display:flex;flex-direction:column;border-top-width:3px!important}
+.score-number{font-family:'IBM Plex Mono',monospace;font-size:72px;font-weight:600;line-height:1;letter-spacing:-.03em;text-align:center;margin-bottom:4px}
+.score-denom{font-size:11px;color:var(--muted);text-align:center;margin-bottom:16px}
+.meter-label-row{display:flex;justify-content:space-between;margin-bottom:6px;font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted)}
+.meter-track{height:6px;background:var(--surface-2);border-radius:3px;overflow:hidden;margin-bottom:14px}
+.meter-fill{height:100%;border-radius:3px}
+.risk-badge{font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;border-radius:4px;padding:4px 12px;display:inline-block;text-align:center;width:100%;margin-bottom:18px}
+.meta-rows{border-top:1px solid var(--border-2)}
+.meta-row{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border-2);font-size:11px}
+.meta-row:last-child{border-bottom:none}
+.meta-row-label{color:var(--muted);flex:1}
+.meta-row-value{font-family:'IBM Plex Mono',monospace;color:var(--text)}
 
-    form:focus-within {
-        border-color: #3E5A8A;
-    }
+/* Risk color helpers */
+.c-low{color:var(--low)}.c-medium{color:var(--medium)}.c-high{color:var(--high)}
+.bt-low{border-top-color:var(--low)!important}.bt-medium{border-top-color:var(--medium)!important}.bt-high{border-top-color:var(--high)!important}
+.bg-badge-low{background:var(--low-bg);border:1px solid var(--low-border)}
+.bg-badge-medium{background:var(--medium-bg);border:1px solid var(--medium-border)}
+.bg-badge-high{background:var(--high-bg);border:1px solid var(--high-border)}
 
-    .prompt {
-        display: flex;
-        align-items: center;
-        padding: 0 0 0 16px;
-        font-family: 'IBM Plex Mono', monospace;
-        color: var(--muted);
-        font-size: 15px;
-    }
+/* Indicators */
+.indicator-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+.indicator-count{font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:600;border-radius:4px;padding:2px 8px}
+.indicator-row{display:flex;align-items:flex-start;gap:10px;padding:7px 9px;border-radius:6px;margin-bottom:3px;border:1px solid transparent}
+.indicator-row.flagged{background:var(--high-bg);border-color:var(--high-border)}
+.indicator-icon{flex-shrink:0;margin-top:2px}
+.indicator-label{font-size:12px;font-weight:500;color:var(--text);line-height:1.3}
+.indicator-detail{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);margin-top:1px}
+.indicator-badge{flex-shrink:0;font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.06em;padding:2px 6px;border-radius:3px;align-self:flex-start;margin-top:2px}
+.badge-pass{color:var(--low);background:rgba(62,207,142,.10)}
+.badge-flag{color:var(--high);background:rgba(239,90,90,.15)}
 
-    input[type="text"] {
-        flex: 1;
-        background: transparent;
-        border: none;
-        outline: none;
-        color: var(--text);
-        font-family: 'IBM Plex Mono', monospace;
-        font-size: 15px;
-        padding: 14px 12px;
-    }
+/* Domain card */
+.domain-row{display:flex;align-items:baseline;gap:12px;padding:7px 0;border-bottom:1px solid var(--border-2)}
+.domain-row:last-child{border-bottom:none}
+.domain-row-label{width:110px;flex-shrink:0;font-size:11px;color:var(--muted)}
+.domain-row-value{flex:1;font-size:12px;color:var(--text);text-align:right;word-break:break-all}
+.ssl-badge{font-family:'IBM Plex Mono',monospace;font-size:11px;border-radius:4px;padding:2px 8px;display:inline-block}
+.ssl-valid{color:var(--low);background:rgba(62,207,142,.1);border:1px solid var(--low-border)}
+.ssl-invalid{color:var(--high);background:rgba(239,90,90,.1);border:1px solid var(--high-border)}
+.ssl-unknown{color:var(--medium);background:rgba(240,169,58,.1);border:1px solid var(--medium-border)}
 
-    input[type="text"]::placeholder {
-        color: #4C5875;
-    }
+/* Verdict */
+.verdict-card{border-top-width:3px!important;margin-bottom:32px}
+.verdict-inner{display:flex;align-items:flex-start;gap:20px}
+.verdict-block{flex-shrink:0;width:120px;border-radius:8px;padding:16px 12px;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center}
+.verdict-label{font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:600;letter-spacing:.08em}
+.verdict-sublabel{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.06em;margin-bottom:8px}
+.verdict-text{font-size:13px;color:var(--text);line-height:1.65;margin-bottom:12px}
+.verdict-url-box{display:flex;align-items:center;gap:8px;background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:7px 10px;font-family:'IBM Plex Mono',monospace;overflow:hidden}
+.verdict-url-tag{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em;flex-shrink:0}
+.verdict-url-text{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
-    button {
-        background: #1E2A45;
-        color: var(--text);
-        border: none;
-        border-left: 1px solid var(--border);
-        padding: 0 24px;
-        font-family: 'IBM Plex Sans', sans-serif;
-        font-weight: 500;
-        font-size: 14px;
-        cursor: pointer;
-        transition: background 0.15s ease;
-    }
+/* History */
+.history-card{padding:0;overflow:hidden}
+.history-toolbar{display:flex;align-items:center;gap:10px;padding:16px 20px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.history-search{display:flex;align-items:center;gap:6px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:5px 10px;width:200px}
+.history-search input{background:transparent;border:none;outline:none;font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--text);width:100%}
+.history-search input::placeholder{color:var(--dim)}
+.filter-btn{font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:5px 10px;border-radius:6px;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--muted);transition:all .15s}
+.filter-btn:hover{border-color:#3E5A8A;color:var(--text)}
+.filter-btn.active-all{border-color:#3E5A8A;color:#7FB3E8;background:rgba(74,144,217,.08)}
+.filter-btn.active-high{border-color:var(--high-border);color:var(--high);background:var(--high-bg)}
+.filter-btn.active-medium{border-color:var(--medium-border);color:var(--medium);background:var(--medium-bg)}
+.filter-btn.active-low{border-color:var(--low-border);color:var(--low);background:var(--low-bg)}
+.btn-danger{font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:5px 10px;border-radius:6px;cursor:pointer;border:1px solid rgba(239,90,90,.25);background:transparent;color:var(--high);transition:all .15s;display:inline-flex;align-items:center;gap:5px}
+.btn-danger:hover{background:var(--high-bg)}
+.history-table{width:100%;border-collapse:collapse}
+.history-table th{padding:8px 20px;text-align:left;font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);font-weight:500;border-bottom:1px solid var(--border-2)}
+.history-table td{padding:10px 20px;border-bottom:1px solid var(--border-2);font-size:12px;vertical-align:middle}
+.history-table tr:last-child td{border-bottom:none}
+.history-table tbody tr{cursor:pointer;transition:background-color .1s}
+.history-table tbody tr:hover{background:var(--surface-2)}
+.td-date,.td-time{font-family:'IBM Plex Mono',monospace;font-size:11px}
+.td-date{color:var(--muted)}.td-time{color:var(--dim)}
+.td-domain{font-family:'IBM Plex Mono',monospace}
+.score-mini{display:flex;align-items:center;gap:8px}
+.score-bar{width:48px;height:4px;background:var(--surface-3);border-radius:2px;overflow:hidden}
+.score-bar-fill{height:100%;border-radius:2px}
+.score-val{font-family:'IBM Plex Mono',monospace;font-size:11px;min-width:20px}
+.rescan-link{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--dim);background:none;border:none;cursor:pointer;padding:0;display:inline-flex;align-items:center;gap:4px;transition:color .15s;text-decoration:none}
+.rescan-link:hover{color:var(--blue)}
+.empty-row td{text-align:center;color:var(--muted);padding:32px 20px!important}
 
-    button:hover {
-        background: #29385A;
-    }
+/* Footer */
+.site-footer{background:var(--surface);border-top:1px solid var(--border);padding:14px 0}
+.site-footer .wrap{display:flex;align-items:center;justify-content:space-between;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--dim)}
 
-    /* Result card */
-    .result {
-        margin-top: 28px;
-        background: var(--surface);
-        border: 1px solid var(--border);
-        border-left-width: 4px;
-        border-radius: 8px;
-        padding: 24px;
-    }
-
-    .result.risk-low { border-left-color: var(--low); }
-    .result.risk-medium { border-left-color: var(--medium); }
-    .result.risk-high { border-left-color: var(--high); }
-
-    .result-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 6px;
-    }
-
-    .badge {
-        font-family: 'IBM Plex Mono', monospace;
-        font-size: 12px;
-        font-weight: 600;
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
-        padding: 4px 10px;
-        border-radius: 4px;
-    }
-
-    .badge.risk-low { color: var(--low); background: rgba(62, 207, 142, 0.12); }
-    .badge.risk-medium { color: var(--medium); background: rgba(240, 169, 58, 0.12); }
-    .badge.risk-high { color: var(--high); background: rgba(239, 90, 90, 0.12); }
-
-    .score-label {
-        font-family: 'IBM Plex Mono', monospace;
-        font-size: 13px;
-        color: var(--muted);
-    }
-
-    .checked-url {
-        font-family: 'IBM Plex Mono', monospace;
-        font-size: 13.5px;
-        color: var(--text);
-        word-break: break-all;
-        background: var(--surface-raised);
-        border: 1px solid var(--border);
-        border-radius: 5px;
-        padding: 8px 10px;
-        margin: 14px 0 18px;
-    }
-
-    /* Risk meter */
-    .meter-track {
-        height: 6px;
-        background: var(--surface-raised);
-        border-radius: 3px;
-        overflow: hidden;
-        margin-bottom: 20px;
-    }
-
-    .meter-fill {
-        height: 100%;
-        border-radius: 3px;
-    }
-
-    .meter-fill.risk-low { background: var(--low); }
-    .meter-fill.risk-medium { background: var(--medium); }
-    .meter-fill.risk-high { background: var(--high); }
-
-    .indicators-label {
-        font-family: 'IBM Plex Mono', monospace;
-        font-size: 11px;
-        letter-spacing: 0.1em;
-        text-transform: uppercase;
-        color: var(--muted);
-        margin-bottom: 10px;
-    }
-
-    ul.indicators {
-        list-style: none;
-        padding: 0;
-        margin: 0;
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-    }
-
-    ul.indicators li {
-        font-size: 14px;
-        padding-left: 18px;
-        position: relative;
-        color: var(--text);
-    }
-
-    ul.indicators li::before {
-        content: "";
-        position: absolute;
-        left: 0;
-        top: 6px;
-        width: 6px;
-        height: 6px;
-        border-radius: 1px;
-        background: var(--muted);
-    }
-
-    .no-flags {
-        color: var(--muted);
-        font-size: 14px;
-        font-style: normal;
-    }
-
-    /* History */
-    .history-section {
-        margin-top: 48px;
-    }
-
-    .history-label {
-        font-family: 'IBM Plex Mono', monospace;
-        font-size: 11px;
-        letter-spacing: 0.1em;
-        text-transform: uppercase;
-        color: var(--muted);
-        margin-bottom: 14px;
-    }
-
-    .log-row {
-        display: grid;
-        grid-template-columns: 1fr auto auto;
-        gap: 14px;
-        align-items: center;
-        padding: 12px 4px;
-        border-bottom: 1px solid var(--border);
-    }
-
-    .log-row:first-child {
-        border-top: 1px solid var(--border);
-    }
-
-    .log-url {
-        font-family: 'IBM Plex Mono', monospace;
-        font-size: 13px;
-        color: var(--text);
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-
-    .log-meta {
-        font-family: 'IBM Plex Mono', monospace;
-        font-size: 11px;
-        color: var(--muted);
-        text-align: right;
-        white-space: nowrap;
-    }
-
-    .empty-state {
-        color: var(--muted);
-        font-size: 14px;
-        padding: 20px 4px;
-    }
+/* Responsive */
+@media(max-width:1100px){.results-grid{grid-template-columns:1fr 1fr}.results-grid .score-card{grid-column:1 / -1}}
+@media(max-width:720px){.wrap{padding:0 16px}.results-grid{grid-template-columns:1fr}.search-row{flex-wrap:wrap}.verdict-inner{flex-direction:column}.verdict-block{width:100%}.history-toolbar{gap:8px}.history-search{width:100%}}
 </style>
 </head>
 <body>
 
-    <div class="status">
-        <span class="status-dot"></span>
-        <span>Analyzer ready</span>
+<header class="site-header">
+  <div class="wrap">
+    <div class="header-brand">
+      <div class="header-logo">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          <line x1="12" y1="9" x2="12" y2="13"/>
+          <circle cx="12" cy="16" r="0.5" fill="var(--blue)"/>
+        </svg>
+      </div>
+      <div>
+        <div class="header-title">Phishing URL Detector</div>
+        <div class="header-sub">Rule-Based Threat Intelligence Engine</div>
+      </div>
+      <span class="version-badge">v2.0</span>
     </div>
+    <div class="header-meta">
+      <span class="status-dot"></span> Engine Ready
+      <span class="vr"></span>
+      Python · Flask · SQLite
+    </div>
+  </div>
+</header>
 
-    <h1>Phishing URL Detector</h1>
-    <p class="subtitle">Paste a URL to run it through automated red-flag checks — HTTPS, domain age, typosquatting, and more.</p>
+<main>
+<div class="wrap">
 
-    <form method="POST">
-        <span class="prompt">&gt;</span>
-        <input type="text" name="url" placeholder="https://example.com" required autofocus>
-        <button type="submit">Check URL</button>
-    </form>
-
-    {% if result %}
-        {% set risk_class = 'risk-' ~ result.risk|lower %}
-        <div class="result {{ risk_class }}">
-            <div class="result-header">
-                <span class="badge {{ risk_class }}">{{ result.risk }} risk</span>
-                <span class="score-label">score {{ result.score }}</span>
-            </div>
-
-            <div class="checked-url">{{ result.url }}</div>
-
-           <div class="meter-fill {{ risk_class }}" style="width: {{ result.meter_percent }}% ;"></div>
-    
-            <div class="indicators-label">Indicators</div>
-            {% if result.flags %}
-                <ul class="indicators">
-                    {% for flag in result.flags %}
-                        <li>{{ flag }}</li>
-                    {% endfor %}
-                </ul>
-            {% else %}
-                <p class="no-flags">No red flags detected on this URL.</p>
-            {% endif %}
+  <div class="card search-card">
+    <div class="section-label-row">
+      <span class="section-label">URL Analysis</span><hr><span>Press Enter to submit</span>
+    </div>
+    <form method="POST" action="/">
+      <div class="search-row">
+        <div class="url-input-wrap">
+          <span class="url-prompt mono">›</span>
+          <input class="url-input" type="text" name="url" id="url-field"
+            placeholder="https://example.com/path?query=value"
+            value="{{ result.url if result else '' }}"
+            required autofocus autocomplete="off" spellcheck="false">
         </div>
-    {% endif %}
+        <button type="button" class="btn btn-ghost" onclick="loadSample()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v18m0 0h10a2 2 0 0 0 2-2V9M9 21H5a2 2 0 0 1-2-2V9m0 0h18"/></svg>
+          Sample URL
+        </button>
+        <button type="button" class="btn btn-ghost" onclick="clearInput()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          Clear
+        </button>
+        <button type="submit" class="btn btn-primary">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          Analyze URL
+        </button>
+      </div>
+      <p class="search-hint">Analyzes HTTPS, typosquatting, domain age, brand impersonation, TLD, hosting, phishing keywords, and more.</p>
+    </form>
+  </div>
 
-    <div class="history-section">
-        <div class="history-label">Scan log</div>
-        {% if history %}
-            {% for row in history %}
-                <div class="log-row">
-                    <span class="log-url" title="{{ row[0] }}">{{ row[0] }}</span>
-                    <span class="badge risk-{{ row[1].lower() }}">{{ row[1] }}</span>
-                    <span class="log-meta">{{ row[3] }}</span>
-                </div>
-            {% endfor %}
-        {% else %}
-            <div class="empty-state">No scans yet — check a URL above to start your log.</div>
+  {% if result %}
+  {% set risk = result.risk | lower %}
+
+  <div class="url-bar">
+    <span class="url-bar-label">Analyzed</span>
+    <span class="url-bar-divider"></span>
+    <span class="url-bar-url mono">{{ result.url }}</span>
+    {% if result.scan_time is defined %}<span class="url-bar-time">{{ result.scan_time }}</span>{% endif %}
+  </div>
+
+  <div class="results-grid">
+
+    <!-- Card 1: Threat Score -->
+    <div class="card score-card bt-{{ risk }}">
+      <div class="section-label">Threat Score</div>
+      <div class="score-number c-{{ risk }}">{{ result.score }}</div>
+      <div class="score-denom">out of 100</div>
+      <div class="meter-label-row"><span>Threat Level</span><span>{{ result.meter_percent }}%</span></div>
+      <div class="meter-track"><div class="meter-fill" style="width: {{ result.meter_percent }}%; background: var(--{{ risk }});"></div></div>
+      <div class="risk-badge c-{{ risk }} bg-badge-{{ risk }}">{{ risk | upper }} RISK</div>
+      <div class="meta-rows">
+        {% if result.confidence is defined %}
+        <div class="meta-row"><span class="meta-row-label">Detection Confidence</span><span class="meta-row-value">{{ result.confidence }}%</span></div>
         {% endif %}
+        <div class="meta-row"><span class="meta-row-label">Scan Status</span><span class="meta-row-value c-low">Completed</span></div>
+        <div class="meta-row"><span class="meta-row-label">Engine Version</span><span class="meta-row-value">v2.0</span></div>
+      </div>
     </div>
 
+    <!-- Card 2: Security Indicators -->
+    <div class="card">
+      {% set INDICATORS = [
+        ('https',        'HTTPS',               'https',     'No HTTPS — plain HTTP connection'),
+        ('typosquat',    'Typosquatting',        'typosquat', 'Potential character substitution detected'),
+        ('brand',        'Brand Impersonation',  'brand',     'Brand name found in non-official domain'),
+        ('tld',          'Suspicious TLD',       'tld',       'TLD check passed'),
+        ('domain_age',   'Domain Age',           'age',       'Domain age indicator'),
+        ('shortener',    'URL Shortener',        'shortener', 'URL shortener check passed'),
+        ('hosting',      'Hosting Provider',     'hosting',   'Hosting provider indicator'),
+        ('keywords',     'Phishing Keywords',    'keyword',   'Keyword scan result'),
+        ('hyphens',      'Excessive Hyphens',    'hyphen',    'Hyphen count within normal range'),
+        ('subdomains',   'Excessive Subdomains', 'subdomain', 'Subdomain count within range'),
+        ('random_domain','Random Domain',        'random',    'Domain randomness score')
+      ] %}
+      {% set flagged_count = result.flags | length %}
+      <div class="indicator-header">
+        <span class="section-label" style="margin-bottom:0">Security Indicators</span>
+        <span class="indicator-count {% if flagged_count > 0 %}c-high bg-badge-high{% else %}c-low bg-badge-low{% endif %}">
+          {{ flagged_count }} flagged / 11
+        </span>
+      </div>
+      {% if result.indicators is defined %}
+        {% for ind in result.indicators %}
+          {% set is_flagged = not ind.passed %}
+          <div class="indicator-row {% if is_flagged %}flagged{% endif %}">
+            <span class="indicator-icon">
+              {% if is_flagged %}<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--high)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="12" y1="9" x2="12" y2="13"/><circle cx="12" cy="16" r="0.5" fill="var(--high)"/></svg>
+              {% else %}<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--low)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>{% endif %}
+            </span>
+            <div style="flex:1;min-width:0">
+              <div class="indicator-label">{{ ind.label }}</div>
+              {% if ind.detail is defined %}<div class="indicator-detail">{{ ind.detail }}</div>{% endif %}
+            </div>
+            <span class="indicator-badge {% if is_flagged %}badge-flag{% else %}badge-pass{% endif %}">{{ 'FLAG' if is_flagged else 'PASS' }}</span>
+          </div>
+        {% endfor %}
+      {% else %}
+        {% for ind_key, ind_label, match_kw, clean_detail in INDICATORS %}
+          {% set ns = namespace(is_flagged=false, match_detail=clean_detail) %}
+          {% for flag in result.flags %}{% if match_kw in flag|lower %}{% set ns.is_flagged = true %}{% set ns.match_detail = flag %}{% endif %}{% endfor %}
+          <div class="indicator-row {% if ns.is_flagged %}flagged{% endif %}">
+            <span class="indicator-icon">
+              {% if ns.is_flagged %}<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--high)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="12" y1="9" x2="12" y2="13"/><circle cx="12" cy="16" r="0.5" fill="var(--high)"/></svg>
+              {% else %}<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--low)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>{% endif %}
+            </span>
+            <div style="flex:1;min-width:0">
+              <div class="indicator-label">{{ ind_label }}</div>
+              <div class="indicator-detail">{{ ns.match_detail }}</div>
+            </div>
+            <span class="indicator-badge {% if ns.is_flagged %}badge-flag{% else %}badge-pass{% endif %}">{{ 'FLAG' if ns.is_flagged else 'PASS' }}</span>
+          </div>
+        {% endfor %}
+      {% endif %}
+    </div>
+
+    <!-- Card 3: Domain Information -->
+    <div class="card">
+      <div class="section-label">Domain Information</div>
+      {% set domain_val=result.domain|default('—') %}{% set registrar_val=result.registrar|default('—') %}
+      {% set created_val=result.created|default('—') %}{% set expiry_val=result.expiry|default('—') %}
+      {% set country_val=result.country|default('—') %}{% set hosting_val=result.hosting|default('—') %}
+      {% set ip_val=result.ip|default('—') %}{% set ssl_val=result.ssl|default('—') %}
+      <div class="domain-row"><span class="domain-row-label">Domain</span><span class="domain-row-value mono">{{ domain_val }}</span></div>
+      <div class="domain-row"><span class="domain-row-label">Registrar</span><span class="domain-row-value">{{ registrar_val }}</span></div>
+      <div class="domain-row"><span class="domain-row-label">Created</span><span class="domain-row-value mono">{{ created_val }}</span></div>
+      <div class="domain-row"><span class="domain-row-label">Expiry</span><span class="domain-row-value mono">{{ expiry_val }}</span></div>
+      <div class="domain-row"><span class="domain-row-label">Country</span><span class="domain-row-value mono">{{ country_val }}</span></div>
+      <div class="domain-row"><span class="domain-row-label">Hosting Provider</span><span class="domain-row-value">{{ hosting_val }}</span></div>
+      <div class="domain-row"><span class="domain-row-label">IP Address</span><span class="domain-row-value mono">{{ ip_val }}</span></div>
+      <div class="domain-row">
+        <span class="domain-row-label">SSL Status</span>
+        <span class="domain-row-value">
+          {% if ssl_val != '—' %}
+            {% if 'valid' in ssl_val|lower %}<span class="ssl-badge ssl-valid">{{ ssl_val }}</span>
+            {% elif 'none' in ssl_val|lower or 'http' in ssl_val|lower %}<span class="ssl-badge ssl-invalid">{{ ssl_val }}</span>
+            {% else %}<span class="ssl-badge ssl-unknown">{{ ssl_val }}</span>{% endif %}
+          {% else %}<span style="color:var(--dim)">—</span>{% endif %}
+        </span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Card 4: Recommendation -->
+  {% set rec_text = result.recommendation_text | default(
+    'Multiple heuristic indicators triggered on this URL. Review Security Indicators above and cross-reference with your threat intelligence feeds before making a final determination.' if risk != 'low' else
+    'This URL passed all automated heuristic checks. No phishing indicators were detected. Standard security hygiene still applies.'
+  ) %}
+  <div class="card verdict-card bt-{{ risk }}">
+    <div class="section-label">Recommendation</div>
+    <div class="verdict-inner">
+      <div class="verdict-block bg-badge-{{ risk }}" style="border:1px solid var(--{{ risk }}-border)">
+        {% if risk == 'high' %}
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--high)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="12" y1="9" x2="12" y2="13"/><circle cx="12" cy="16" r="0.5" fill="var(--high)"/></svg>
+        {% elif risk == 'medium' %}
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--medium)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="12" y1="9" x2="12" y2="13"/><circle cx="12" cy="16" r="0.5" fill="var(--medium)"/></svg>
+        {% else %}
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--low)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
+        {% endif %}
+        <div class="verdict-label c-{{ risk }}">{{ risk | upper }}</div>
+      </div>
+      <div style="flex:1;min-width:0">
+        {% if risk == 'high' %}<div class="verdict-sublabel c-high">Do not visit · Block at perimeter · Report to security team</div>
+        {% elif risk == 'medium' %}<div class="verdict-sublabel c-medium">Proceed with caution · Use isolated environment · Do not enter credentials</div>
+        {% else %}<div class="verdict-sublabel c-low">No threats detected · Safe to visit</div>{% endif %}
+        <p class="verdict-text">{{ rec_text }}</p>
+        <div class="verdict-url-box">
+          <span class="verdict-url-tag">URL</span>
+          <span class="verdict-url-text mono">{{ result.url }}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {% endif %}
+
+  <!-- History -->
+  <div class="card history-card" id="history-section">
+    <div class="history-toolbar">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="12 8 12 12 14 14"/><path d="M3.05 11a9 9 0 1 0 .5-4.5"/><polyline points="3 3 3 7 7 7"/></svg>
+      <span class="section-label" style="margin-bottom:0">Scan History</span>
+      <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--dim)">({{ history|length if history else 0 }} total)</span>
+      <div style="flex:1"></div>
+      <div class="history-search">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--dim)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" id="history-search" placeholder="Search domains…" oninput="filterHistory()">
+      </div>
+      <button class="filter-btn active-all" onclick="setFilter('all',this)" id="f-all">All</button>
+      <button class="filter-btn" onclick="setFilter('high',this)" id="f-high">High</button>
+      <button class="filter-btn" onclick="setFilter('medium',this)" id="f-medium">Medium</button>
+      <button class="filter-btn" onclick="setFilter('low',this)" id="f-low">Low</button>
+      <button class="filter-btn" onclick="toggleSort(this)" id="sort-btn">↓ Newest</button>
+      <form method="POST" action="/clear-history" style="margin:0">
+        <button type="submit" class="btn-danger">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+          Clear History
+        </button>
+      </form>
+    </div>
+    <table class="history-table">
+      <thead><tr><th>Date</th><th>Time</th><th>Risk</th><th>Score</th><th>Domain</th><th>Actions</th></tr></thead>
+      <tbody id="history-body">
+        {% if history %}
+          {% for row in history %}
+          {% set h_risk=row[1]|lower %}{% set h_score=row[2]|int %}{% set h_ts=row[3]|string %}{% set h_url=row[0] %}
+          {% set h_domain=h_url|replace('http://','',1)|replace('https://','',1)|replace('www.','',1) %}
+          {% if '/' in h_domain %}{% set h_domain=h_domain.split('/')[0] %}{% endif %}
+          <tr data-risk="{{ h_risk }}" data-domain="{{ h_domain }}" data-ts="{{ h_ts }}" onclick="rescan('{{ h_url|e }}')">
+            <td class="td-date">{{ h_ts[:10] if h_ts|length > 10 else h_ts }}</td>
+            <td class="td-time">{{ h_ts[11:19] if h_ts|length > 18 else '—' }}</td>
+            <td>
+              <span class="indicator-badge {% if h_risk=='high' %}badge-flag{% elif h_risk=='medium' %}c-medium{% else %}badge-pass{% endif %}"
+                style="{% if h_risk=='medium' %}background:var(--medium-bg);{% endif %}">{{ h_risk|upper }}</span>
+            </td>
+            <td>
+              <div class="score-mini">
+                <div class="score-bar"><div class="score-bar-fill" style="width:{{ h_score }}%;background:var(--{{ h_risk }});"></div></div>
+                <span class="score-val c-{{ h_risk }}">{{ h_score }}</span>
+              </div>
+            </td>
+            <td class="td-domain">{{ h_domain }}</td>
+            <td><a href="#" onclick="event.stopPropagation();rescan('{{ h_url|e }}');return false;" class="rescan-link">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+              Re-scan
+            </a></td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr class="empty-row"><td colspan="6">No scans yet — analyze a URL above to start your log.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+
+</div>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <span>Engine v2.0 · Python · Flask · SQLite · WHOIS</span>
+    <span>Built by Swaroop Morajkar</span>
+  </div>
+</footer>
+
+<script>
+const SAMPLES=['http://secure-paypa1.com/login/verify?session=a8f2c9d1','https://google.com','http://amaz0n-account-verify.net/signin?ref=promo','https://github.com','http://paypa1-update-account.tk/confirm'];
+let si=0;
+function loadSample(){document.getElementById('url-field').value=SAMPLES[si++%SAMPLES.length]}
+function clearInput(){const f=document.getElementById('url-field');f.value='';f.focus()}
+function rescan(url){document.getElementById('url-field').value=url;document.querySelector('form[action="/"]').submit()}
+let activeFilter='all',sortAsc=false;
+function setFilter(risk,btn){
+  activeFilter=risk;
+  document.querySelectorAll('.filter-btn').forEach(b=>b.className='filter-btn');
+  btn.className='filter-btn active-'+risk;
+  applyHistoryFilters();
+}
+function toggleSort(btn){
+  sortAsc=!sortAsc;
+  btn.textContent=(sortAsc?'↑ Oldest':'↓ Newest');
+  const rows=Array.from(document.querySelectorAll('#history-body tr[data-ts]'));
+  const tbody=document.getElementById('history-body');
+  rows.sort((a,b)=>sortAsc?a.dataset.ts.localeCompare(b.dataset.ts):b.dataset.ts.localeCompare(a.dataset.ts));
+  rows.forEach(r=>tbody.appendChild(r));
+}
+function filterHistory(){applyHistoryFilters()}
+function applyHistoryFilters(){
+  const q=(document.getElementById('history-search').value||'').toLowerCase();
+  const rows=document.querySelectorAll('#history-body tr[data-risk]');
+  let vis=0;
+  rows.forEach(row=>{
+    const ok=(activeFilter==='all'||row.dataset.risk===activeFilter)&&(!q||row.dataset.domain.toLowerCase().includes(q));
+    row.style.display=ok?'':'none';
+    if(ok)vis++;
+  });
+  let e=document.getElementById('history-empty');
+  if(vis===0&&rows.length>0){
+    if(!e){e=document.createElement('tr');e.id='history-empty';e.className='empty-row';e.innerHTML='<td colspan="6">No results match your filters.</td>';document.getElementById('history-body').appendChild(e)}
+    e.style.display='';
+  }else if(e){e.style.display='none'}
+}
+</script>
 </body>
 </html>
