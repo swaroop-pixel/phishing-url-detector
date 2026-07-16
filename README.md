@@ -1,53 +1,143 @@
 # 🎣 Phishing URL Detector
 
-A rule-based phishing URL analyzer built in **Python + Flask**, designed to detect common phishing indicators in suspicious URLs using heuristic analysis.
+> **A modular, rule-based phishing URL detection engine built with Python, Flask, and SQLite that analyzes suspicious URLs using multiple independent detection modules and a weighted heuristic scoring system.**
 
-The project identifies red flags such as typosquatting, brand impersonation, suspicious top-level domains, hosting-platform abuse, URL obfuscation techniques, and generic phishing keywords to estimate the likelihood that a URL is malicious.
+This project detects common phishing indicators such as **typosquatting, brand impersonation, suspicious top-level domains (TLDs), URL obfuscation, hosting-platform abuse, phishing keywords,** and **domain intelligence** to estimate the likelihood that a URL is malicious.
 
-Built as a hands-on cybersecurity project to explore detection engineering fundamentals, understand the strengths of rule-based detection, and identify where heuristic approaches reach their limits.
+Designed as a hands-on cybersecurity project, it explores **Detection Engineering**, heuristic analysis, backend optimization, and the practical strengths and limitations of rule-based phishing detection.
 
 ---
 
-## 🚀 Features
+## 📸 Screenshots
 
-- HTTPS / IP address / `@` symbol detection
-- Typosquatting detection (e.g. `paypa1.com`)
-- Brand impersonation detection
-- Hosting-platform aware detection (AWS, Vercel, Netlify, GitHub Pages, etc.)
-- Company-independent phishing keyword detection
-- Gibberish/random domain detection
+> *(Replace these placeholders with your actual screenshots.)*
+
+| Dashboard | 
+|------------|
+| ![Dashboard](screenshots/dashboard.png) | 
+
+|Threat Analysis |
+|-----------------|
+|![Threat Analysis](screenshots/threat-analysis.png) |
+
+|| Scan History |
+|--------------|
+| ![History](screenshots/history.png) |
+
+---
+
+# ✨ Features
+
+### URL Analysis
+
+- HTTPS verification
+- Raw IP address detection
+- `@` symbol detection
+- Excessive subdomain detection
+- Excessive hyphen detection
+- Long URL detection
 - Suspicious TLD detection
 - URL shortener detection
-- WHOIS domain age analysis
-- Risk scoring engine (Low / Medium / High)
-- SQLite scan history
-- Flask-based web interface
+- Random / gibberish domain detection
+
+### Threat Intelligence
+
+- Brand impersonation detection
+- Typosquatting detection
+- Phishing keyword detection
+- Unicode / Punycode support
+- Domain intelligence
+- WHOIS enrichment
+- SSL validation
+- DNS resolution
+- Hosting provider detection
+
+### Scoring Engine
+
+- Weighted heuristic scoring (0–100)
+- Confidence calculation
+- Low / Medium / High / Critical classification
+- Human-readable recommendations
+
+### Dashboard
+
+- Modern SOC-inspired UI
+- Interactive scan history
+- Search & filtering
+- CSV export
+- Performance optimized scanning
+- SQLite persistence
 
 ---
 
-## 🛠️ Tech Stack
+# 🛠 Tech Stack
 
-- Python 3
-- Flask
-- SQLite
-- HTML
-- CSS
-- tldextract
-- python-whois
+| Category | Technologies |
+|----------|--------------|
+| Language | Python 3 |
+| Backend | Flask |
+| Database | SQLite |
+| Frontend | HTML5, CSS3, JavaScript |
+| Networking | socket, ssl |
+| Intelligence | python-whois, tldextract |
+| Performance | ThreadPoolExecutor, caching |
+| Version Control | Git & GitHub |
 
 ---
 
-## 📁 Project Structure
+# 🏗 Architecture
+
+```text
+                 User
+
+                   │
+
+          Flask Web Application
+                app.py
+
+                   │
+
+          Detection Engine
+             detector.py
+
+                   │
+
+ ┌──────────┬──────────┬──────────┬──────────┐
+ │          │          │          │          │
+HTTPS     DNS       WHOIS     URL Rules   Brand Rules
+ │          │          │          │          │
+ └──────────┴──────────┴──────────┴──────────┘
+
+                   │
+
+        Threat Scoring Engine
+
+                   │
+
+     Recommendation + Confidence
+
+                   │
+
+         SQLite Scan History
+
+                   │
+
+             Dashboard UI
+```
+
+---
+
+# 📂 Project Structure
 
 ```text
 phishing-url-detector/
 
 ├── data/
 │   ├── brands.py
-│   ├── suspicious_tlds.py
-│   ├── url_shorteners.py
 │   ├── hosting_domains.py
-│   └── phishing_keywords.py
+│   ├── phishing_keywords.py
+│   ├── suspicious_tlds.py
+│   └── url_shorteners.py
 │
 ├── templates/
 │   └── index.html
@@ -64,7 +154,7 @@ phishing-url-detector/
 
 ---
 
-## ⚙️ Installation
+# ⚙ Installation
 
 Clone the repository
 
@@ -83,8 +173,6 @@ Create a virtual environment
 ```bash
 python -m venv venv
 ```
-
-Activate it
 
 ### Windows
 
@@ -110,7 +198,7 @@ Run the application
 python app.py
 ```
 
-Open your browser and visit
+Visit
 
 ```
 http://127.0.0.1:5000
@@ -118,123 +206,205 @@ http://127.0.0.1:5000
 
 ---
 
-## 🔍 Detection Features
+# 🔍 Detection Modules
 
-The detector performs multiple independent security checks including:
+The detector performs multiple independent security checks.
 
-- HTTPS verification
-- Raw IP address detection
-- Suspicious TLD detection
-- URL shortener detection
-- `@` symbol detection
-- Excessive subdomain detection
-- Excessive hyphen detection
-- Random/gibberish domain detection
-- Long URL detection
-- Phishing keyword detection
-- Typosquatting detection
-- Brand impersonation detection
-- WHOIS domain age analysis
+| Module | Purpose |
+|---------|---------|
+| HTTPS | Detect insecure HTTP URLs |
+| IP Address | Detect raw IP usage |
+| URL Shortener | Identify shortened URLs |
+| Suspicious TLD | Detect risky domain extensions |
+| Typosquatting | Detect character substitution attacks |
+| Brand Impersonation | Detect fake brand domains |
+| Phishing Keywords | Detect credential harvesting language |
+| Excessive Hyphens | Identify suspicious domain structures |
+| Long URLs | Detect URL obfuscation |
+| Subdomain Analysis | Detect misleading subdomains |
+| Punycode Detection | Identify IDN-based attacks |
+| WHOIS Analysis | Domain registration intelligence |
+| SSL Analysis | Certificate validation |
+| DNS Resolution | Resolve IP & hosting provider |
 
-Each detected indicator contributes to an overall risk score.
-
----
-
-## 📊 Risk Scoring
-
-| Score | Risk |
-|-------: | ------ |
-| 0 – 3 | 🟢 Low |
-| 4 – 7 | 🟡 Medium |
-| 8+ | 🔴 High |
-
-Each phishing indicator contributes to the overall score.
-
-The higher the score, the more suspicious the URL.
+Each module contributes an independent weighted score toward the final threat assessment while preserving detailed reasoning for every triggered indicator.
 
 ---
 
-## 🧪 Testing
+# 📊 Threat Scoring
 
-The detector has been tested using a mixture of:
+| Score | Risk Level |
+|-------:|------------|
+| **0 – 24** | 🟢 Low |
+| **25 – 49** | 🟡 Medium |
+| **50 – 74** | 🟠 High |
+| **75 – 100** | 🔴 Critical |
 
-- Real phishing URLs
+The final score is calculated using weighted heuristic rules rather than machine learning.
+
+---
+
+# 📋 Domain Intelligence
+
+The application attempts to collect:
+
+- Hostname
+- Registrable Domain
+- Registrar
+- Domain Creation Date
+- Domain Expiration Date
+- Domain Age
+- Country
+- Hosting Provider
+- IP Address
+- SSL Status
+
+If network lookups fail, the detector continues scanning gracefully and reports unavailable fields without interrupting the analysis.
+
+---
+
+# ⚡ Performance Optimizations
+
+Version 2 introduced several backend improvements:
+
+- Concurrent DNS, SSL, and WHOIS lookups
+- ThreadPoolExecutor-based networking
+- Lookup caching
+- Reduced blocking operations
+- Graceful timeout handling
+- Independent module execution
+- Improved backend reliability
+
+---
+
+# 🧪 Testing
+
+The detector has been evaluated using a mixture of:
+
 - Legitimate websites
-- Typosquatting examples
-- Hosting-platform phishing URLs
+- Known phishing URLs
+- Brand impersonation examples
+- Typosquatting domains
 - URL shorteners
-- Randomly generated domains
+- Punycode domains
+- Hosting-provider abuse
+- Suspicious TLDs
+- Random domain generation
 
-Current small-scale testing achieved:
-
-- ✅ 5 / 7 phishing URLs detected
-- ✅ 0 / 8 false positives on tested legitimate URLs
-
----
-
-## ⚠️ Current Limitations
-
-This project is intentionally rule-based and therefore has some limitations.
-
-- Clean-looking phishing domains may bypass detection.
-- WHOIS lookups may fail because of rate limits or unavailable registration data.
-- Phishing keyword detection currently supports English only.
-- The detector analyzes only the URL, not the webpage content itself.
-- No reputation services (VirusTotal, Google Safe Browsing) are currently integrated.
+The primary objective is reducing false positives while maintaining strong detection coverage.
 
 ---
 
-## 🚀 Future Improvements
+# 📈 Project Statistics
 
-Version 2
+- ✅ 15+ independent detection modules
+- ✅ Weighted scoring engine (0–100)
+- ✅ Hundreds of phishing keywords
+- ✅ Hundreds of suspicious TLDs
+- ✅ Large brand reference dataset
+- ✅ Modern Flask dashboard
+- ✅ SQLite persistence
+- ✅ Search & filtering
+- ✅ CSV export
+- ✅ Domain intelligence
+- ✅ Performance optimization
+- ✅ Modular architecture
 
-- Unicode / Punycode detection
-- Suspicious path analysis
-- Digit-ratio analysis
-- URL entropy calculation
-- Improved scoring engine
+---
 
-Version 3
+# ⚠ Current Limitations
 
-- VirusTotal API integration
-- Google Safe Browsing integration
+This project is intentionally **rule-based**.
+
+Known limitations include:
+
+- Sophisticated phishing domains without lexical indicators may bypass detection.
+- WHOIS information may be unavailable because of registry restrictions or rate limits.
+- Reputation services are not yet integrated.
+- HTML content is not inspected.
+- JavaScript behavior is not analyzed.
+- English keyword detection is currently prioritized.
+
+---
+
+# 🚀 Roadmap
+
+## ✅ Version 2 (Completed)
+
+- Modular detection engine
+- Weighted scoring (0–100)
+- Domain intelligence
+- Search & filtering
+- CSV export
+- Scan history
+- Modern dashboard
+- Concurrent lookups
+- Performance caching
+
+---
+
+## 🔜 Version 3
+
+- VirusTotal API
+- Google Safe Browsing
 - OpenPhish integration
 - PhishTank integration
-- DNS analysis
-- SSL certificate analysis
-- HTML page analysis
+- DNS reputation analysis
+- SSL certificate intelligence
+- HTML page inspection
+- Passive DNS intelligence
 
-Version 4
+---
+
+## 🔮 Version 4
 
 - Machine Learning classifier
 - Browser extension
 - REST API
 - Docker deployment
+- RESTful microservice
+- Cloud deployment
 
 ---
 
-## 👨‍💻 Author
+# 👨‍💻 Author
 
-### Swaroop Morajkar
+## Swaroop Morajkar
 
-Computer Engineering Graduate  
-M.Sc. Cybersecurity Student  
-Aspiring SOC Analyst & Security Engineer
+**Computer Engineering Graduate**
 
-GitHub: [swaroop-pixel](https://github.com/swaroop-pixel)
+**M.Sc. Cybersecurity Student**
 
-LinkedIn:
-[Swaroop Morajkar](https://www.linkedin.com/in/swaroop-morajkar-83071a260/)
+**Aspiring Detection Engineer | SOC Analyst | Security Engineer**
+
+**GitHub**
+
+https://github.com/swaroop-pixel
+
+**LinkedIn**
+
+https://www.linkedin.com/in/swaroop-morajkar-83071a260/
 
 ---
 
-## 📄 License
+# 🤝 Contributing
 
-This project is licensed under the MIT License.
+Contributions, issue reports, feature suggestions, and security improvements are welcome.
+
+If you discover a bug or have an idea for improving the detector, feel free to open an issue or submit a pull request.
 
 ---
 
-## ⚠️ Disclaimer
+# 📄 License
 
-This project was developed for educational and cybersecurity research purposes.
-It should not be considered a replacement for enterprise-grade phishing detection solutions and should be used alongside other security controls.
+This project is licensed under the **MIT License**.
+
+---
+
+# ⚠ Disclaimer
+
+This project was developed for **educational purposes, cybersecurity research, and learning detection engineering concepts.**
+
+It should **not** be considered a replacement for enterprise-grade phishing detection platforms.
+
+Always combine heuristic analysis with reputation services, threat intelligence feeds, and other security controls when making security decisions.
