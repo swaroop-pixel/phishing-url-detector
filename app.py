@@ -1,49 +1,65 @@
-from flask import Flask, render_template, request
+"""Flask routes for rendering and managing detector scans."""
+import csv
+import io
+import json
+import time
+
+from flask import Flask, Response, jsonify, render_template, request
+
+from database import clear_history, delete_scan, get_recent_scans, init_db, save_scan
 from detector import check_url
-from domain_info import get_domain_information
-from database import init_db, save_scan, get_recent_scans
 
 app = Flask(__name__)
 init_db()
 
-@app.route('/', methods=['GET', 'POST'])
+
+def _run_scan(url):
+    started = time.perf_counter()
+    result = check_url(url)
+    result["duration_ms"] = round((time.perf_counter() - started) * 1000)
+    result["scan_status"] = "Completed"
+    result["meter_percent"] = max(0, min(int(result["score"]), 100))
+    domain_info = result.pop("domain_info", {})
+    result.update(domain_info)
+    result["created"] = result.get("created_date", "Unavailable")
+    result["expiry"] = result.get("expiry_date", "Unavailable")
+    result["ip"] = result.get("ip_address", "Unavailable")
+    result["hosting"] = result.get("hosting_provider", "Unavailable")
+    result["ssl"] = result.get("ssl_status", "Unavailable")
+    save_scan(result)
+    return result
+
+
+@app.route("/", methods=["GET", "POST"])
 def home():
-    result = None
-    if request.method == 'POST':
-        url = request.form.get('url', '').strip()
-        if url:
-            result = check_url(url)
-            result['meter_percent'] = min(int(result['score'] / 15 * 100), 100)
+    result = _run_scan(request.form["url"].strip()) if request.method == "POST" and request.form.get("url", "").strip() else None
+    return render_template("index.html", result=result, history=get_recent_scans())
 
-            # Domain Information panel metadata - collected separately from
-            # phishing detection. get_domain_information() never raises, but
-            # this try/except is a second line of defense: even an
-            # unexpected failure here can never stop the scan itself from
-            # completing or being saved to history.
-            try:
-                domain_info = get_domain_information(url)
-            except Exception:
-                domain_info = {
-                    "domain": "Unavailable", "subdomain": "Unavailable", "suffix": "Unavailable",
-                    "registrar": "Unavailable", "created_date": "Unavailable", "expiry_date": "Unavailable",
-                    "country": "Unavailable", "ip_address": "Unavailable", "hosting_provider": "Unavailable",
-                    "ssl_status": "Unavailable", "whois_available": False,
-                }
 
-            result.update(domain_info)
-            # index.html's Domain Information panel reads these short
-            # aliases directly (result.created, result.ip, etc.) - set them
-            # so the existing template needs no changes.
-            result['created'] = domain_info['created_date']
-            result['expiry'] = domain_info['expiry_date']
-            result['ip'] = domain_info['ip_address']
-            result['hosting'] = domain_info['hosting_provider']
-            result['ssl'] = domain_info['ssl_status']
+@app.post("/history/<int:scan_id>")
+def remove_history_row(scan_id):
+    if not delete_scan(scan_id):
+        return jsonify({"ok": False, "message": "Scan was not found."}), 404
+    return jsonify({"ok": True, "message": "Scan deleted."})
 
-            save_scan(result['url'], result['risk'], result['score'])
 
-    history = get_recent_scans(10)
-    return render_template('index.html', result=result, history=history)
+@app.post("/clear-history")
+def remove_all_history():
+    clear_history()
+    return jsonify({"ok": True, "message": "Scan history cleared."})
 
-if __name__ == '__main__':
+
+@app.get("/history/export.csv")
+def export_history():
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Date", "Time", "URL", "Risk", "Score", "Confidence", "Flags", "Duration (ms)"])
+    for scan in get_recent_scans(limit=10000):
+        flags = "; ".join(json.loads(scan["flags"] or "[]"))
+        date, _, scan_time = scan["checked_at"].partition(" ")
+        writer.writerow([date, scan_time, scan["url"], scan["risk"], scan["score"], scan["confidence"], flags, scan["duration_ms"]])
+    return Response(output.getvalue(), mimetype="text/csv", headers={"Content-Disposition": "attachment; filename=phishing-scan-history.csv"})
+
+
+if __name__ == "__main__":
     app.run(debug=True)

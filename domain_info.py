@@ -1,287 +1,174 @@
-"""Domain metadata collection module.
+"""Concurrent, failure-safe domain enrichment for URL scans."""
 
-Completely independent from detector.py: this module never touches, imports
-from, or influences the phishing risk-scoring logic. Its only job is to
-gather human-readable "Domain Information" panel data (registrar, dates,
-IP, hosting, SSL, etc.) and hand back a dict of strings.
-
-Design contract:
-  - get_domain_information(url) NEVER raises.
-  - Every field is independently fault-tolerant: a WHOIS outage cannot blank
-    out DNS/SSL fields and vice versa.
-  - Any field that can't be determined is returned as the literal string
-    "Unavailable" - never None, never an exception, never a partial object -
-    so the Flask template can render it directly.
-  - All network calls (WHOIS, DNS, reverse DNS, SSL handshake) are wrapped
-    with a hard timeout via a thread pool, since several of these calls
-    (socket.gethostbyname, whois.whois's IANA referral step) have no
-    reliable timeout parameter of their own and can otherwise hang.
-  - Lightweight in-memory TTL caches avoid re-querying WHOIS/DNS for the
-    same host on every repeated scan.
-"""
-
+import logging
 import socket
 import ssl
+import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+from concurrent.futures import ThreadPoolExecutor, wait
+from datetime import datetime
 from urllib.parse import urlsplit
 
 import tldextract
 import whois
 
+LOGGER = logging.getLogger(__name__)
 UNAVAILABLE = "Unavailable"
+NOT_APPLICABLE = "Not Applicable"
+NETWORK_TIMEOUT_SECONDS = 2
+CACHE_TTL_SECONDS = 30 * 60
 
-# Use the bundled snapshot instead of fetching the public suffix list over
-# the network on every call (mirrors detector.py's approach).
-_tld_extractor = tldextract.TLDExtract(suffix_list_urls=())
-
-_WHOIS_TIMEOUT_SECONDS = 3
-_DNS_TIMEOUT_SECONDS = 3
-_SSL_TIMEOUT_SECONDS = 3
-
-_CACHE_TTL_SECONDS = 3600
-
-_whois_executor = ThreadPoolExecutor(max_workers=4)
-_dns_executor = ThreadPoolExecutor(max_workers=4)
-
-_whois_cache = {}
-_ip_cache = {}
-_hosting_cache = {}
+_extract = tldextract.TLDExtract(suffix_list_urls=())
+_executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="domain-info")
+_cache, _cache_lock = {}, threading.Lock()
 
 
-def _cache_get(cache, key):
-    entry = cache.get(key)
-    if entry is None:
-        return None, False
-    value, cached_at = entry
-    if time.time() - cached_at < _CACHE_TTL_SECONDS:
-        return value, True
-    return None, False
+def _cache_get(key):
+    with _cache_lock:
+        value = _cache.get(key)
+        if value and time.monotonic() - value[1] < CACHE_TTL_SECONDS:
+            return value[0]
+    return None
 
 
-def _cache_set(cache, key, value):
-    cache[key] = (value, time.time())
+def _cache_set(key, value):
+    with _cache_lock:
+        _cache[key] = (value, time.monotonic())
 
 
-def _hostname_from_url(url):
-    """Extracts a bare lowercase hostname from a URL that may or may not
-    already have a scheme. Never raises - returns "" on anything unparsable.
-    """
-    try:
-        candidate = (url or "").strip()
-        if "://" not in candidate:
-            candidate = "http://" + candidate
-        return (urlsplit(candidate).hostname or "").lower()
-    except Exception:
-        return ""
+def _unavailable():
+    return {"domain": UNAVAILABLE, "subdomain": UNAVAILABLE, "suffix": UNAVAILABLE,
+            "registrar": UNAVAILABLE, "created_date": UNAVAILABLE, "expiry_date": UNAVAILABLE,
+            "country": UNAVAILABLE, "ip_address": UNAVAILABLE, "hosting_provider": UNAVAILABLE,
+            "ssl_status": UNAVAILABLE, "whois_available": False, "age_days": None}
+
+
+def _not_applicable():
+    result = _unavailable()
+    for key in result:
+        if key not in ("whois_available", "age_days"):
+            result[key] = NOT_APPLICABLE
+    return result
 
 
 def _first(value):
-    """WHOIS fields are sometimes a list (e.g. multiple creation_date
-    entries from a messy registrar record) and sometimes a scalar."""
-    if isinstance(value, list):
-        return value[0] if value else None
-    return value
+    return value[0] if isinstance(value, list) and value else value
 
 
 def _format_date(value):
     value = _first(value)
-    if value is None:
-        return UNAVAILABLE
-    try:
-        return value.strftime("%Y-%m-%d")
-    except AttributeError:
-        return str(value) if value else UNAVAILABLE
+    return value.strftime("%Y-%m-%d") if hasattr(value, "strftime") else (str(value) if value else UNAVAILABLE)
 
 
-def _safe_field(value):
-    value = _first(value)
-    return value if value else UNAVAILABLE
-
-
-# --- WHOIS -------------------------------------------------------------
-
-def _whois_lookup(full_domain):
-    return whois.whois(full_domain, timeout=_WHOIS_TIMEOUT_SECONDS)
-
-
-def _get_whois_record(full_domain):
-    """Returns a whois record object, or None on any failure. Never raises,
-    never prints. Cached per domain."""
-    if not full_domain:
-        return None
-
-    cached, hit = _cache_get(_whois_cache, full_domain)
-    if hit:
+def _whois(domain):
+    key = ("whois", domain)
+    cached = _cache_get(key)
+    if cached is not None:
         return cached
-
-    record = None
     try:
-        future = _whois_executor.submit(_whois_lookup, full_domain)
-        record = future.result(timeout=_WHOIS_TIMEOUT_SECONDS)
-    except FutureTimeoutError:
-        record = None
-    except Exception:
-        record = None
-
-    _cache_set(_whois_cache, full_domain, record)
-    return record
+        result = whois.whois(domain, timeout=NETWORK_TIMEOUT_SECONDS)
+    except Exception as error:
+        LOGGER.info("WHOIS unavailable for %s: %s", domain, error)
+        result = None
+    _cache_set(key, result)
+    return result
 
 
-# --- DNS / IP ------------------------------------------------------------
-
-def _resolve_ip(hostname):
-    """Resolves hostname -> IPv4 string, or None on failure. Hard-timeout
-    via thread pool since socket.gethostbyname has no timeout param."""
-    if not hostname:
-        return None
-
-    cached, hit = _cache_get(_ip_cache, hostname)
-    if hit:
+def _dns_and_hosting(hostname):
+    key = ("dns_hosting", hostname)
+    cached = _cache_get(key)
+    if cached is not None:
         return cached
-
-    ip = None
+    ip, hosting = UNAVAILABLE, UNAVAILABLE
     try:
-        future = _dns_executor.submit(socket.gethostbyname, hostname)
-        ip = future.result(timeout=_DNS_TIMEOUT_SECONDS)
-    except FutureTimeoutError:
-        ip = None
-    except Exception:
-        ip = None
+        ip = socket.gethostbyname(hostname)
+        try:
+            hosting = socket.gethostbyaddr(ip)[0] or UNAVAILABLE
+        except Exception as error:
+            LOGGER.info("Hosting lookup unavailable for %s: %s", hostname, error)
+    except Exception as error:
+        LOGGER.info("DNS unavailable for %s: %s", hostname, error)
+    result = (ip, hosting)
+    _cache_set(key, result)
+    return result
 
-    _cache_set(_ip_cache, hostname, ip)
-    return ip
 
-
-def _resolve_hosting_provider(ip):
-    """Best-effort reverse DNS (PTR) lookup on the resolved IP, used as a
-    proxy for 'who hosts this' (e.g. reveals AWS/Google/Cloudflare PTR
-    patterns) since no external IP-WHOIS/ASN service is in scope here.
-    Returns "Unavailable" on any failure - never raises.
-    """
-    if not ip:
-        return UNAVAILABLE
-
-    cached, hit = _cache_get(_hosting_cache, ip)
-    if hit:
+def _ssl_status(hostname):
+    key = ("ssl", hostname)
+    cached = _cache_get(key)
+    if cached is not None:
         return cached
-
-    provider = UNAVAILABLE
-    try:
-        future = _dns_executor.submit(socket.gethostbyaddr, ip)
-        ptr_hostname, _aliases, _addrs = future.result(timeout=_DNS_TIMEOUT_SECONDS)
-        provider = ptr_hostname or UNAVAILABLE
-    except FutureTimeoutError:
-        provider = UNAVAILABLE
-    except Exception:
-        provider = UNAVAILABLE
-
-    _cache_set(_hosting_cache, ip, provider)
-    return provider
-
-
-# --- SSL -------------------------------------------------------------------
-
-def _check_ssl(hostname):
-    """Attempts a real TLS handshake on port 443. Returns one of:
-    "Valid (TLS)", "Invalid/Expired", or "Unavailable" (unreachable, no
-    HTTPS, timeout, or any other failure). Never raises.
-    """
-    if not hostname:
-        return UNAVAILABLE
-
     try:
         context = ssl.create_default_context()
-        with socket.create_connection((hostname, 443), timeout=_SSL_TIMEOUT_SECONDS) as sock:
-            with context.wrap_socket(sock, server_hostname=hostname) as tls_sock:
-                cert = tls_sock.getpeercert()
-                return "Valid (TLS)" if cert else "Present (unverified)"
-    except ssl.SSLCertVerificationError:
-        return "Invalid/Expired"
-    except ssl.SSLError:
-        return "Invalid/Expired"
-    except Exception:
-        # Connection refused, timeout, no route, DNS failure, etc. - all
-        # collapse to "Unavailable" rather than raising.
-        return UNAVAILABLE
+        with socket.create_connection((hostname, 443), timeout=NETWORK_TIMEOUT_SECONDS) as connection:
+            with context.wrap_socket(connection, server_hostname=hostname) as tls:
+                result = "Valid (TLS)" if tls.getpeercert() else "Present (unverified)"
+    except ssl.SSLError as error:
+        LOGGER.info("SSL validation unavailable for %s: %s", hostname, error)
+        result = "Invalid/Expired"
+    except Exception as error:
+        LOGGER.info("SSL unavailable for %s: %s", hostname, error)
+        result = UNAVAILABLE
+    _cache_set(key, result)
+    return result
 
 
-# --- Public entry point ------------------------------------------------
+def _record_fields(record):
+    if record is None:
+        return UNAVAILABLE, UNAVAILABLE, UNAVAILABLE, UNAVAILABLE, None
+    try:
+        created = _first(getattr(record, "creation_date", None))
+        age_days = max((datetime.now() - created).days, 0) if hasattr(created, "year") else None
+        return (_first(getattr(record, "registrar", None)) or UNAVAILABLE,
+                _format_date(created), _format_date(getattr(record, "expiration_date", None)),
+                _first(getattr(record, "country", None)) or UNAVAILABLE, age_days)
+    except Exception as error:
+        LOGGER.info("Malformed WHOIS result: %s", error)
+        return UNAVAILABLE, UNAVAILABLE, UNAVAILABLE, UNAVAILABLE, None
+
 
 def get_domain_information(url):
-    """Collects Domain Information panel metadata for `url`.
+    """Return fast parsed fields plus concurrent, bounded network enrichment.
 
-    Never raises. Every field independently degrades to "Unavailable" on
-    failure. Safe to call unconditionally alongside check_url() - a WHOIS
-    or DNS outage here can never affect or interrupt phishing detection.
+    The caller returns after two seconds even when a provider thread is still
+    stuck; incomplete fields are represented as ``Unavailable``.
     """
     try:
-        hostname = _hostname_from_url(url)
-        extracted = _tld_extractor(hostname)
+        raw = (url or "").strip()
+        split = urlsplit(raw)
+        if split.scheme and split.scheme not in ("http", "https"):
+            return _not_applicable()
+        if not split.scheme:
+            split = urlsplit("http://" + raw)
+        hostname = (split.hostname or "").lower()
+        if not hostname:
+            return _unavailable()
+        parts = _extract(hostname)
+        full_domain = f"{parts.domain}.{parts.suffix}" if parts.suffix else parts.domain
+        result = _unavailable()
+        result.update({"domain": parts.domain or UNAVAILABLE, "subdomain": parts.subdomain or UNAVAILABLE,
+                       "suffix": parts.suffix or UNAVAILABLE})
+        if not full_domain:
+            return result
 
-        domain = extracted.domain or UNAVAILABLE
-        subdomain = extracted.subdomain or UNAVAILABLE
-        suffix = extracted.suffix or UNAVAILABLE
-        full_domain = f"{extracted.domain}.{extracted.suffix}" if extracted.suffix else extracted.domain
-
-        record = _get_whois_record(full_domain)
-        whois_available = record is not None
-
-        registrar = UNAVAILABLE
-        created_date = UNAVAILABLE
-        expiry_date = UNAVAILABLE
-        country = UNAVAILABLE
-
-        if record is not None:
-            # Each field read independently - a missing/odd attribute on
-            # one field must not block the others.
-            try:
-                registrar = _safe_field(getattr(record, "registrar", None))
-            except Exception:
-                pass
-            try:
-                created_date = _format_date(getattr(record, "creation_date", None))
-            except Exception:
-                pass
-            try:
-                expiry_date = _format_date(getattr(record, "expiration_date", None))
-            except Exception:
-                pass
-            try:
-                country = _safe_field(getattr(record, "country", None))
-            except Exception:
-                pass
-
-        ip_address = _resolve_ip(hostname) or UNAVAILABLE
-        hosting_provider = _resolve_hosting_provider(ip_address if ip_address != UNAVAILABLE else None)
-        ssl_status = _check_ssl(hostname)
-
-        return {
-            "domain": domain,
-            "subdomain": subdomain,
-            "suffix": suffix,
-            "registrar": registrar,
-            "created_date": created_date,
-            "expiry_date": expiry_date,
-            "country": country,
-            "ip_address": ip_address,
-            "hosting_provider": hosting_provider,
-            "ssl_status": ssl_status,
-            "whois_available": whois_available,
-        }
-    except Exception:
-        # Absolute last resort - should be unreachable given the try/except
-        # coverage above, but guarantees this function truly never raises.
-        return {
-            "domain": UNAVAILABLE,
-            "subdomain": UNAVAILABLE,
-            "suffix": UNAVAILABLE,
-            "registrar": UNAVAILABLE,
-            "created_date": UNAVAILABLE,
-            "expiry_date": UNAVAILABLE,
-            "country": UNAVAILABLE,
-            "ip_address": UNAVAILABLE,
-            "hosting_provider": UNAVAILABLE,
-            "ssl_status": UNAVAILABLE,
-            "whois_available": False,
-        }
+        futures = {"whois": _executor.submit(_whois, full_domain),
+                   "dns": _executor.submit(_dns_and_hosting, hostname),
+                   "ssl": _executor.submit(_ssl_status, hostname)}
+        done, _ = wait(futures.values(), timeout=NETWORK_TIMEOUT_SECONDS)
+        values = {}
+        for name, future in futures.items():
+            if future in done:
+                try:
+                    values[name] = future.result()
+                except Exception as error:
+                    LOGGER.info("%s lookup failed: %s", name, error)
+        registrar, created, expiry, country, age_days = _record_fields(values.get("whois"))
+        result.update({"registrar": registrar, "created_date": created, "expiry_date": expiry,
+                       "country": country, "age_days": age_days,
+                       "whois_available": values.get("whois") is not None,
+                       "ssl_status": values.get("ssl", UNAVAILABLE)})
+        result["ip_address"], result["hosting_provider"] = values.get("dns", (UNAVAILABLE, UNAVAILABLE))
+        return result
+    except Exception as error:
+        LOGGER.exception("Domain enrichment failed: %s", error)
+        return _unavailable()
