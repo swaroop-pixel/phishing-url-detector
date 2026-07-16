@@ -10,7 +10,6 @@ Designed as a hands-on cybersecurity project, it explores **Detection Engineerin
 
 ## 📸 Screenshots
 
-> *(Replace these placeholders with your actual screenshots.)*
 
 | Dashboard | 
 |------------|
@@ -20,7 +19,7 @@ Designed as a hands-on cybersecurity project, it explores **Detection Engineerin
 |-----------------|
 |![Threat Analysis](screenshots/threat-analysis.png) |
 
-|| Scan History |
+| Scan History |
 |--------------|
 | ![History](screenshots/history.png) |
 
