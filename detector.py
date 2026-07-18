@@ -6,6 +6,7 @@ import ipaddress
 import io
 import threading
 import contextlib
+import logging
 from datetime import datetime
 from urllib.parse import unquote, urlsplit
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
@@ -18,6 +19,8 @@ from data.suspicious_tlds import SUSPICIOUS_TLDS
 from data.url_shorteners import URL_SHORTENERS
 from data.hosting_domains import KNOWN_INFRA_DOMAINS
 from data.phishing_keywords import PHISHING_KEYWORDS
+
+LOGGER = logging.getLogger(__name__)
 
 # Use the bundled snapshot instead of fetching the public suffix list
 # over the network on every run (avoids slow/failing HTTP calls + noisy tracebacks)
@@ -639,13 +642,100 @@ def _rule_result(rule_id, triggered, reason, confidence=0.0, metadata=None):
     are normalized to 0.0/None when the rule didn't trigger, so a
     not-triggered rule can never accidentally contribute score.
     """
+    try:
+        normalized_confidence = min(max(float(confidence), 0.0), 1.0) if triggered else 0.0
+    except (TypeError, ValueError):
+        normalized_confidence = 0.0
     return {
         "rule_id": rule_id,
         "triggered": bool(triggered),
         "reason": reason if triggered else None,
-        "confidence": round(float(confidence), 3) if triggered else 0.0,
-        "metadata": metadata or {},
+        "confidence": round(normalized_confidence, 3),
+        "score": 0,
+        "metadata": metadata if isinstance(metadata, dict) else {},
     }
+
+
+def _unavailable_rule_result(rule_id):
+    """A safe module result for failed or incomplete external data."""
+    result = _rule_result(rule_id, False, None)
+    result.update({"score": 0, "confidence": 0.0, "reason": "Unavailable", "metadata": {}})
+    return result
+
+
+def _validate_rule_result(result):
+    """Validate every module result before it enters score aggregation."""
+    if not isinstance(result, dict) or not isinstance(result.get("rule_id"), str):
+        return _unavailable_rule_result("unknown_rule")
+    rule_id = result["rule_id"]
+    try:
+        confidence = float(result.get("confidence", 0))
+    except (TypeError, ValueError):
+        return _unavailable_rule_result(rule_id)
+    if not 0 <= confidence <= 1:
+        return _unavailable_rule_result(rule_id)
+    result = dict(result)
+    result["triggered"] = bool(result.get("triggered", False))
+    result["confidence"] = confidence if result["triggered"] else 0.0
+    result["metadata"] = result.get("metadata") if isinstance(result.get("metadata"), dict) else {}
+    result["reason"] = result.get("reason") if isinstance(result.get("reason"), str) else ("Unavailable" if not result["triggered"] else "Detected")
+    result["score"] = round(RULE_CONFIG.get(rule_id, {}).get("weight", 0) * result["confidence"])
+    return result
+
+
+# The complete, documented set of fields check_url() relies on from
+# get_domain_information(). Audit finding: nothing previously validated this
+# dict's shape/types before using it - rule_domain_age() read straight from
+# it into a numeric comparison. _validate_domain_info() closes that gap the
+# same way _validate_rule_result() already does for rule dicts: no matter
+# what domain_info.py returns (even if it's mid-refactor, buggy, or a
+# completely different shape), this function guarantees a safe, complete
+# dict before anything downstream touches it, and logs when it had to
+# substitute a default.
+_DOMAIN_INFO_STRING_DEFAULTS = {
+    "hostname": "Unavailable", "registrable_domain": "Unavailable", "domain": "Unavailable",
+    "subdomain": "Unavailable", "suffix": "Unavailable", "registrar": "Unavailable",
+    "created_date": "Unavailable", "expiry_date": "Unavailable", "country": "Unavailable",
+    "ip_address": "Unavailable", "hosting_provider": "Unavailable", "ssl_status": "Unavailable",
+    "age_days": "Unavailable", "domain_age": "Unavailable", "expires_in": "Unavailable",
+}
+
+
+def _validate_domain_info(domain_info):
+    """Guarantees a complete, safely-typed domain_info dict. Called at the
+    check_url() boundary before domain_info is used in ANY comparison or
+    passed into a rule function - this is the fix for the class of bug
+    audited in this investigation (a module output being trusted and used
+    in a numeric comparison without validation first).
+    """
+    if not isinstance(domain_info, dict):
+        LOGGER.warning("get_domain_information() returned a non-dict (%r) - substituting safe defaults", type(domain_info))
+        domain_info = {}
+
+    safe = dict(_DOMAIN_INFO_STRING_DEFAULTS)
+    safe["whois_available"] = False
+
+    for key, default in _DOMAIN_INFO_STRING_DEFAULTS.items():
+        value = domain_info.get(key, default)
+        if key == "age_days":
+            # age_days is the one field allowed to be an int (everything
+            # else here is always a display string) - validate its type
+            # explicitly rather than assuming domain_info.py got it right.
+            if not isinstance(value, int) or isinstance(value, bool):
+                if value is not None and value != default:
+                    LOGGER.warning("domain_info.age_days was %r (not int) - substituting %r", value, default)
+                value = default
+            safe[key] = value
+            continue
+        if value is None or not isinstance(value, str):
+            LOGGER.warning("domain_info.%s was %r (expected str) - substituting %r", key, value, default)
+            value = default
+        safe[key] = value
+
+    whois_available = domain_info.get("whois_available", False)
+    safe["whois_available"] = bool(whois_available) if isinstance(whois_available, (bool, int)) else False
+
+    return safe
 
 
 # --- Individual rule functions -----------------------------------------
@@ -890,10 +980,10 @@ def rule_domain_age(full_domain, verbose=False, network_info=None):
     else:
         metadata = {"available": network_info.get("whois_available", False),
                     "age_days": network_info.get("age_days"), "note": None}
-    if not metadata["available"]:
-        return _rule_result("domain_age", False, None, metadata=metadata)
+    age_days = metadata.get("age_days")
+    if not metadata.get("available") or not isinstance(age_days, int):
+        return _unavailable_rule_result("domain_age")
 
-    age_days = metadata["age_days"]
     if age_days < 30:
         reason = f"Domain registered only {age_days} days ago - very new domains are high risk"
         return _rule_result("domain_age", True, reason, confidence=0.9, metadata=metadata)
@@ -985,7 +1075,7 @@ def calculate_threat_score(rule_results, config=RULE_CONFIG):
     capped at 100. Purely arithmetic - no learned parameters.
     """
     total = 0.0
-    for r in rule_results:
+    for r in (_validate_rule_result(rule) for rule in rule_results):
         if r["triggered"]:
             weight = config.get(r["rule_id"], {}).get("weight", 0)
             total += weight * r["confidence"]
@@ -1017,7 +1107,7 @@ def calculate_overall_confidence(rule_results, config=RULE_CONFIG, data_complete
       lightly-weighted/low-certainty ones (e.g. excessive_hyphens at 0.5),
       then scaled by the same data-completeness factor.
     """
-    triggered = [r for r in rule_results if r["triggered"]]
+    triggered = [_validate_rule_result(rule) for rule in rule_results if _validate_rule_result(rule)["triggered"]]
 
     if not triggered:
         baseline = 70.0
@@ -1053,9 +1143,28 @@ def _build_response(raw_url, rule_results, threat_score, risk_level, confidence,
     # backward/template compatibility (existing Flask templates iterate
     # result['flags']); 'rules' carries the full structured detail for
     # anything more advanced (a rule-by-rule breakdown table, etc).
+    rule_results = [_validate_rule_result(rule) for rule in (rule_results or [])]
+    safe_domain_info = _validate_domain_info(domain_info)
     flags = [r["reason"] for r in rule_results if r["triggered"] and r["reason"]]
+
+    # Final type guarantees on the documented contract - never None, never
+    # the wrong type, regardless of what upstream computation produced.
+    if risk_level not in _RECOMMENDATIONS:
+        LOGGER.warning("Unexpected risk_level %r - defaulting to Medium", risk_level)
+        risk_level = "Medium"
+    try:
+        threat_score = max(0, min(int(round(threat_score)), 100))
+    except (TypeError, ValueError):
+        LOGGER.warning("threat_score %r was not numeric - defaulting to 0", threat_score)
+        threat_score = 0
+    try:
+        confidence = max(0, min(int(round(confidence)), 100))
+    except (TypeError, ValueError):
+        LOGGER.warning("confidence %r was not numeric - defaulting to 0", confidence)
+        confidence = 0
+
     return {
-        "url": raw_url,
+        "url": raw_url if isinstance(raw_url, str) else "",
         "threat_score": threat_score,
         "score": threat_score,      # alias - Flask/template compatibility
         "risk_level": risk_level,
@@ -1064,7 +1173,10 @@ def _build_response(raw_url, rule_results, threat_score, risk_level, confidence,
         "recommendation": _RECOMMENDATIONS[risk_level],
         "flags": flags,
         "rules": rule_results,
-        "domain_info": domain_info or {},
+        "whois": {"available": bool(safe_domain_info.get("whois_available", False)),
+                  "created_date": safe_domain_info.get("created_date", "Unavailable"),
+                  "age_days": safe_domain_info.get("age_days", "Unavailable")},
+        "domain_info": safe_domain_info,
         "metadata": {
             "data_completeness": data_completeness,
             "triggered_rule_count": len(flags),
@@ -1073,71 +1185,122 @@ def _build_response(raw_url, rule_results, threat_score, risk_level, confidence,
     }
 
 
+def _fallback_response(raw_url, reason):
+    """Absolute last resort: used only if check_url()'s top-level safety
+    net catches something unexpected that survived every other guard. Still
+    satisfies the full documented contract (score/confidence/risk/flags/
+    recommendation/whois/domain_info all present, correctly typed) so a
+    caller (Flask, the template, the database layer) never has to
+    special-case "the detector didn't return the shape I expected."
+    """
+    LOGGER.error("check_url() hit its top-level safety net for url=%r: %s", raw_url, reason)
+    return _build_response(
+        raw_url if isinstance(raw_url, str) else "",
+        [_rule_result("scan_error", True, f"Scan could not complete: {reason}", confidence=1.0, metadata={})],
+        threat_score=50,
+        risk_level="Medium",
+        confidence=0,
+        data_completeness=0.0,
+        domain_info=None,
+    )
+
+
 def check_url(raw_url):
     """Main entry point. Runs every rule, then hands the collected
     RuleResults to the scoring engine (calculate_threat_score /
     calculate_risk_level / calculate_overall_confidence) to produce the
     final Threat Score (0-100), Risk Level, and Overall Confidence (0-100%).
+
+    Guarantees (see requirements from the Issue 1/Issue 2 audit): this
+    function can never raise. Every module it calls is validated at the
+    boundary before its output is used (_validate_domain_info for
+    get_domain_information(), _validate_rule_result for every rule), and
+    this outer try/except is the last-resort safety net if something
+    unforeseen still slips through - the detector must never crash a scan
+    because one module failed.
     """
-    url = raw_url.strip()
+    try:
+        if not isinstance(raw_url, str) or not raw_url.strip():
+            return _fallback_response(raw_url, "empty or non-string URL")
 
-    # 0a/0b. Scheme validation happens before anything else - an invalid
-    # scheme (javascript:, data:, ftp:, etc.) is an automatic Critical
-    # verdict (weight 100, confidence 1.0 => threat score 100), since
-    # parsing domain structure on a non-http(s) URI isn't meaningful.
-    scheme_match = _SCHEME_PATTERN.match(url)
-    if scheme_match:
-        scheme = scheme_match.group(1).lower()
-        if scheme not in ("http", "https"):
-            rule_results = [rule_disallowed_scheme(scheme)]
-            threat_score = calculate_threat_score(rule_results)
-            risk_level = calculate_risk_level(threat_score)
-            confidence = calculate_overall_confidence(rule_results, data_completeness=1.0)
-            return _build_response(raw_url, rule_results, threat_score, risk_level, confidence)
-        # Valid scheme, normalize its case so downstream checks are reliable.
-        url = scheme + url[scheme_match.end(1):]
-    else:
-        # No scheme at all (e.g. "example.com") - assume http, as before.
-        url = "http://" + url
+        url = raw_url.strip()
 
-    # Parse once - every rule below reads from this single representation.
-    parsed = _parse_url_components(url)
+        # 0a/0b. Scheme validation happens before anything else - an invalid
+        # scheme (javascript:, data:, ftp:, etc.) is an automatic Critical
+        # verdict (weight 100, confidence 1.0 => threat score 100), since
+        # parsing domain structure on a non-http(s) URI isn't meaningful.
+        scheme_match = _SCHEME_PATTERN.match(url)
+        if scheme_match:
+            scheme = scheme_match.group(1).lower()
+            if scheme not in ("http", "https"):
+                rule_results = [rule_disallowed_scheme(scheme)]
+                threat_score = calculate_threat_score(rule_results)
+                risk_level = calculate_risk_level(threat_score)
+                confidence = calculate_overall_confidence(rule_results, data_completeness=1.0)
+                return _build_response(raw_url, rule_results, threat_score, risk_level, confidence)
+            # Valid scheme, normalize its case so downstream checks are reliable.
+            url = scheme + url[scheme_match.end(1):]
+        else:
+            # No scheme at all (e.g. "example.com") - assume http, as before.
+            url = "http://" + url
 
-    # Phase 1: deterministic rules do not require network access.
-    fast_rule_results = [
-        _rule_result("disallowed_scheme", False, None),
-        rule_malformed_whitespace(url),
-        rule_no_https(parsed),
-        rule_ip_address_host(parsed),
-        rule_suspicious_tld(parsed),
-        rule_url_shortener(parsed),
-        rule_userinfo_present(parsed),
-        rule_brand_in_username(parsed),
-        rule_excessive_subdomains(parsed),
-        rule_excessive_hyphens(parsed),
-        rule_gibberish_domain(parsed),
-        rule_url_length(url),
-        rule_phishing_keywords_host(parsed),
-        rule_typosquatting(parsed),
-        rule_brand_impersonation(parsed),
-        rule_path_keywords(parsed),
-        rule_punycode_present(parsed),
-        rule_punycode_brand_homograph(parsed),
-    ]
+        # Parse once - every rule below reads from this single representation.
+        parsed = _parse_url_components(url)
 
-    # Phase 2: bounded concurrent WHOIS, DNS/hosting and TLS enrichment.
-    # Phase 3: merge the resulting age rule into the completed fast results.
-    domain_info = get_domain_information(url)
-    domain_age_result = rule_domain_age(parsed.full_domain, verbose=VERBOSE, network_info=domain_info)
-    whois_available = domain_age_result["metadata"].get("available", False)
-    data_completeness = 1.0 if whois_available else 0.9
-    rule_results = fast_rule_results + [domain_age_result]
+        # Phase 1: deterministic rules do not require network access.
+        fast_rule_results = [
+            _rule_result("disallowed_scheme", False, None),
+            rule_malformed_whitespace(url),
+            rule_no_https(parsed),
+            rule_ip_address_host(parsed),
+            rule_suspicious_tld(parsed),
+            rule_url_shortener(parsed),
+            rule_userinfo_present(parsed),
+            rule_brand_in_username(parsed),
+            rule_excessive_subdomains(parsed),
+            rule_excessive_hyphens(parsed),
+            rule_gibberish_domain(parsed),
+            rule_url_length(url),
+            rule_phishing_keywords_host(parsed),
+            rule_typosquatting(parsed),
+            rule_brand_impersonation(parsed),
+            rule_path_keywords(parsed),
+            rule_punycode_present(parsed),
+            rule_punycode_brand_homograph(parsed),
+        ]
 
-    threat_score = calculate_threat_score(rule_results)
-    risk_level = calculate_risk_level(threat_score)
-    confidence = calculate_overall_confidence(rule_results, data_completeness=data_completeness)
+        # Phase 2: bounded concurrent WHOIS, DNS/hosting and TLS enrichment.
+        # get_domain_information() is itself defensively written to never
+        # raise and never return None fields - but it's an external module
+        # boundary, so we validate its output here regardless of how
+        # trustworthy it claims to be. This is the fix for the audited gap:
+        # nothing previously checked this dict's shape/types before a rule
+        # function used it in a numeric comparison.
+        try:
+            raw_domain_info = get_domain_information(url)
+        except Exception as error:
+            LOGGER.exception("get_domain_information() raised for url=%r: %s", url, error)
+            raw_domain_info = None
+        domain_info = _validate_domain_info(raw_domain_info)
 
-    return _build_response(raw_url, rule_results, threat_score, risk_level, confidence, data_completeness, domain_info)
+        # Phase 3: merge the resulting age rule into the completed fast results.
+        domain_age_result = rule_domain_age(parsed.full_domain, verbose=VERBOSE, network_info=domain_info)
+        whois_available = domain_age_result["metadata"].get("available", False)
+        data_completeness = 1.0 if whois_available else 0.9
+        rule_results = fast_rule_results + [domain_age_result]
+
+        threat_score = calculate_threat_score(rule_results)
+        risk_level = calculate_risk_level(threat_score)
+        confidence = calculate_overall_confidence(rule_results, data_completeness=data_completeness)
+
+        return _build_response(raw_url, rule_results, threat_score, risk_level, confidence, data_completeness, domain_info)
+
+    except Exception as error:
+        # Last-resort safety net. Every module above is already individually
+        # hardened, so reaching this point means something truly unforeseen
+        # happened - but the detector still must not crash the caller.
+        LOGGER.exception("check_url() failed unexpectedly for url=%r: %s", raw_url, error)
+        return _fallback_response(raw_url, str(error))
 
 
 if __name__ == "__main__":
