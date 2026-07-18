@@ -19,6 +19,10 @@ Designed as a hands-on cybersecurity project, it explores **Detection Engineerin
 |-----------------|
 |![Threat Analysis](screenshots/threat-analysis.png) |
 
+|Domain Information |
+|-----------------|
+|![Domain Information](screenshots/domain_info.png) |
+
 | Scan History |
 |--------------|
 | ![History](screenshots/history.png) |
