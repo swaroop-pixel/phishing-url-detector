@@ -7,6 +7,14 @@ This project detects common phishing indicators such as **typosquatting, brand i
 Designed as a hands-on cybersecurity project, it explores **Detection Engineering**, heuristic analysis, backend optimization, and the practical strengths and limitations of rule-based phishing detection.
 
 ---
+## 🌐 Live Demo
+
+**Try the application:**  
+[![Live Demo](https://img.shields.io/badge/Live-Demo-success?style=for-the-badge)](https://phishguard-gvur.onrender.com/)
+
+> **Note:** The application is hosted on Render's free tier. If it has been idle, the first request may take 30–60 seconds while the service wakes up.
+
+---
 
 ## 📸 Screenshots
 
